@@ -23,6 +23,7 @@ define(`CA_SETUP_CONTROLBYTES',
 )
 define(`CA_SETUP_CONTROLBYTES_MAX', 8192)
 define(`CA_SETUP_CONTROLBYTES_NAME', `Waves' `ENDPOINT_NAME' `Setup ')
+define(`CA_SWITCH_NAME', `Waves' `ENDPOINT_NAME' `Enable ')
 
 define(`CA_SCHEDULE_CORE', 0)
 

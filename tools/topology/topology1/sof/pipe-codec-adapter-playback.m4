@@ -12,6 +12,7 @@ include(`dai.m4')
 include(`pipeline.m4')
 include(`codec_adapter.m4')
 include(`bytecontrol.m4')
+include(`mixercontrol.m4')
 
 #
 # Controls
@@ -61,6 +62,22 @@ C_CONTROLBYTES(CA_SETUP_CONTROLBYTES_NAME_PIPE, PIPELINE_ID,
 	,
 	CA_SETUP_CONFIG)
 
+# For codec developers, rename bytes control names if necessary.
+ifdef(`CA_SWITCH_NAME',`',
+	`define(`CA_SWITCH_NAME', `CA Enable')')
+
+define(CA_SWITCH_NAME_PIPE, concat(CA_SWITCH_NAME, PIPELINE_ID))
+define(`CONTROL_NAME', `CA_SWITCH_NAME_PIPE')
+C_CONTROLMIXER(CA_SWITCH_NAME_PIPE, PIPELINE_ID,
+	CONTROLMIXER_OPS(volsw, 259 binds the mixer control to switch get/put handlers, 259, 259),
+	CONTROLMIXER_MAX(max 1 indicates switch type control, 1),
+	false,
+	,
+	Channel register and shift for Front Center,
+	LIST(`	', KCONTROL_CHANNEL(FC, 3, 0)),
+	"1")
+undefine(`CONTROL_NAME')
+
 #
 # Components and Buffers
 #
@@ -74,7 +91,8 @@ ifdef(`CA_SCHEDULE_CORE',`', `define(`CA_SCHEDULE_CORE', `SCHEDULE_CORE')')
 W_PCM_PLAYBACK(PCM_ID, Passthrough Playback, DAI_PERIODS, 0, SCHEDULE_CORE)
 
 W_CODEC_ADAPTER(0, PIPELINE_FORMAT, DAI_PERIODS, DAI_PERIODS, CA_SCHEDULE_CORE,
-        LIST(`          ', "CA_SETUP_CONTROLBYTES_NAME_PIPE"))
+        LIST(`          ', "CA_SETUP_CONTROLBYTES_NAME_PIPE"),
+	LIST(`          ', "CA_SWITCH_NAME_PIPE"))
 
 # Playback Buffers
 W_BUFFER(0, COMP_BUFFER_SIZE(DAI_PERIODS,
@@ -106,6 +124,9 @@ indir(`define', concat(`PIPELINE_PCM_', PIPELINE_ID), Passthrough Playback PCM_I
 #
 
 PCM_CAPABILITIES(Passthrough Playback PCM_ID, CAPABILITY_FORMAT_NAME(PIPELINE_FORMAT), PCM_MIN_RATE, PCM_MAX_RATE, 2, PIPELINE_CHANNELS, 2, 16, 192, 16384, 65536, 65536)
+
+undefine(`CA_SWITCH_NAME_PIPE')
+undefine(`CA_SWITCH_NAME')
 
 undefine(`CA_SETUP_CONTROLBYTES_NAME_PIPE')
 undefine(`CA_SETUP_PARAMS')
