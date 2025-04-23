@@ -44,6 +44,7 @@ struct waves_codec_data {
 	uint32_t                config_blob_size;
 	void                    *config_blob;
 	bool                    initialized;
+	bool                    enabled;
 };
 
 enum waves_codec_params {
@@ -699,6 +700,7 @@ static int waves_codec_init(struct processing_module *mod)
 	}
 	waves_codec->response = response;
 	waves_codec->initialized = false;
+	waves_codec->enabled = true;
 
 	comp_dbg(dev, "waves_codec_init() done");
 	return ret;
@@ -769,6 +771,10 @@ waves_codec_process(struct processing_module *mod,
 
 	if (!codec->mpd.init_done)
 		waves_codec_init_process(mod);
+
+	/* TODO(waves): handle the enabled/disabled state */
+	if (!waves_codec->enabled)
+		comp_dbg(dev, "waves_codec_process() is disabled");
 
 	memcpy_s(codec->mpd.in_buff, codec->mpd.in_buff_size,
 		 input_buffers[0].data, codec->mpd.in_buff_size);
@@ -862,8 +868,37 @@ static int waves_codec_free(struct processing_module *mod)
 	return 0;
 }
 
+static int waves_codec_set_value(struct processing_module *mod, void *ctl_data)
+{
+#if CONFIG_IPC_MAJOR_3
+	struct sof_ipc_ctrl_data *cdata = ctl_data;
+#elif CONFIG_IPC_MAJOR_4
+	struct sof_ipc4_control_msg_payload *cdata = ctl_data;
+#endif
+	struct module_data *md = &mod->priv;
+	struct waves_codec_data *waves_codec = md->private;
+	struct comp_dev *dev = mod->dev;
+	uint32_t val = 0;
+	int32_t j;
+
+	for (j = 0; j < cdata->num_elems; j++) {
+		val |= cdata->chanv[j].value;
+		comp_dbg(dev, "waves_codec_set_value(), value = %u", val);
+	}
+
+	if (val) {
+		comp_info(dev, "waves_codec_set_value(): enabled");
+		waves_codec->enabled = true;
+	} else {
+		comp_info(dev, "waves_codec_set_value(): disabled");
+		waves_codec->enabled = false;
+	}
+
+	return 0;
+}
+
 static int
-waves_codec_set_configuration(struct processing_module *mod, uint32_t config_id,
+waves_codec_set_bytes_control(struct processing_module *mod, uint32_t config_id,
 			      enum module_cfg_fragment_position pos, uint32_t data_offset_size,
 			      const uint8_t *fragment, size_t fragment_size, uint8_t *response,
 			      size_t response_size)
@@ -885,21 +920,57 @@ waves_codec_set_configuration(struct processing_module *mod, uint32_t config_id,
 	/* whole configuration received, apply it now */
 	ret = waves_effect_apply_config(mod);
 	if (ret) {
-		comp_err(dev, "waves_codec_set_configuration(): error %x: runtime config apply failed",
+		comp_err(dev, "waves_codec_set_bytes_control(): error %x: runtime config apply failed",
 			 ret);
 		return ret;
 	}
 
-	comp_dbg(dev, "waves_codec_set_configuration(): config applied");
+	comp_dbg(dev, "waves_codec_set_bytes_control(): config applied");
 
 	return 0;
+}
+
+static int waves_codec_set_config(struct processing_module *mod, uint32_t config_id,
+				  enum module_cfg_fragment_position pos, uint32_t data_offset_size,
+				  const uint8_t *fragment, size_t fragment_size, uint8_t *response,
+				  size_t response_size)
+{
+	struct comp_dev *dev = mod->dev;
+	int ret;
+
+#if CONFIG_IPC_MAJOR_3
+	struct sof_ipc_ctrl_data *cdata = (struct sof_ipc_ctrl_data *)fragment;
+
+	switch (cdata->cmd) {
+	case SOF_CTRL_CMD_BINARY:
+		return waves_codec_set_bytes_control(mod, config_id, pos, data_offset_size,
+						     fragment, fragment_size, response,
+						     response_size);
+
+	case SOF_CTRL_CMD_SWITCH:
+		return waves_codec_set_value(mod, cdata);
+	}
+
+	comp_err(dev, "waves_codec_set_config() error: invalid command %d", cdata->cmd);
+	return -EINVAL;
+
+#elif CONFIG_IPC_MAJOR_4
+	struct sof_ipc4_control_msg_payload *ctl = (struct sof_ipc4_control_msg_payload *)fragment;
+
+	if (config_id == SOF_IPC4_SWITCH_CONTROL_PARAM_ID)
+		return waves_codec_set_value(mod, ctl);
+
+	return waves_codec_set_bytes_control(mod, config_id, pos, data_offset_size,
+					     fragment, fragment_size, response,
+					     response_size);
+#endif
 }
 
 static const struct module_interface waves_interface = {
 	.init = waves_codec_init,
 	.prepare = waves_codec_prepare,
 	.process_raw_data = waves_codec_process,
-	.set_configuration = waves_codec_set_configuration,
+	.set_configuration = waves_codec_set_config,
 	.reset = waves_codec_reset,
 	.free = waves_codec_free
 };

@@ -52,7 +52,10 @@ define(`W_CODEC_ADAPTER',
 `	bytes ['
 		$6
 `	]'
-
+`ifelse(`$#', `7',
+`	mixer ['
+		$7
+`	]',)'
 `}')
 
 divert(0)dnl
